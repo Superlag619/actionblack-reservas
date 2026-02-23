@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ActionBlack Reservas</title>
+    <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Mis Reservas</h1>
+        
+        <form id="configForm">
+            <div class="field">
+                <label>Hora de la clase:</label>
+                <input type="time" id="hora_clase" value="{{ config.hora_clase }}">
+            </div>
+            
+            <div class="field">
+                <label>Tipo de clase:</label>
+                <select id="tipo_clase">
+                    <option value="HIIT" {% if config.tipo_clase == 'HIIT' %}selected{% endif %}>HIIT</option>
+                    <option value="Functional" {% if config.tipo_clase == 'Functional' %}selected{% endif %}>Functional</option>
+                    <option value="Cardio" {% if config.tipo_clase == 'Cardio' %}selected{% endif %}>Cardio</option>
+                    <!-- Agrega más según tu gym -->
+                </select>
+            </div>
+            
+            <div class="field">
+                <label>Sede:</label>
+                <select id="sede">
+                    <option value="Cedritos" {% if config.sede == 'Cedritos' %}selected{% endif %}>Cedritos</option>
+                    <option value="Chico" {% if config.sede == 'Chico' %}selected{% endif %}>Chicó</option>
+                    <!-- Agrega más sedes -->
+                </select>
+            </div>
+            
+            <button type="submit">💾 Guardar Configuración</button>
+        </form>
+        
+        <div id="status"></div>
+    </div>
+    
+    <script src="/static/app.js"></script>
+</body>
+</html>
