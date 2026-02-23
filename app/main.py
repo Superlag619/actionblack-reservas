@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
 
 from .config_store import init_db, get_config, save_config
 from .booking import run_booking, test_booking
@@ -230,7 +229,7 @@ async def home():
 
                 <button type="submit">
                     <span class="icon">💾</span>
-                    Guardar configuración
+                    Guardar configuración y reservar
                 </button>
             </form>
 
@@ -250,7 +249,7 @@ async def home():
 
             statusBox.style.display = 'block';
             statusBox.className = '';
-            statusBox.innerText = 'Guardando...';
+            statusBox.innerText = 'Guardando configuración...';
 
             const formData = new FormData();
             formData.append('hora_clase', hora);
@@ -259,6 +258,7 @@ async def home():
             formData.append('dias_offset', dias_offset);
 
             try {{
+                // 1) Guardar configuración
                 const res = await fetch('/api/config', {{
                     method: 'POST',
                     body: formData
@@ -266,8 +266,29 @@ async def home():
                 const data = await res.json();
                 if (data.status === 'ok') {{
                     statusBox.className = 'ok';
-                    statusBox.innerText = 'Configuración guardada correctamente';
-                    setTimeout(() => window.location.reload(), 600);
+                    statusBox.innerText = 'Configuración guardada. Ejecutando reserva...';
+
+                    // 2) Ejecutar reserva
+                    try {{
+                        const resBook = await fetch('/api/booking/test', {{
+                            method: 'POST'
+                        }});
+                        const dataBook = await resBook.json();
+                        if (dataBook.status === 'success') {{
+                            statusBox.className = 'ok';
+                            statusBox.innerText = dataBook.message || 'Reserva realizada correctamente.';
+                        }} else {{
+                            statusBox.className = 'err';
+                            statusBox.innerText = dataBook.message || 'Error al ejecutar la reserva.';
+                        }}
+                    }} catch (err2) {{
+                        console.error(err2);
+                        statusBox.className = 'err';
+                        statusBox.innerText = 'Error de red al ejecutar la reserva.';
+                    }}
+
+                    // Recargar para reflejar la nueva config después de un momento
+                    setTimeout(() => window.location.reload(), 1500);
                 }} else {{
                     statusBox.className = 'err';
                     statusBox.innerText = 'Error al guardar configuración';
@@ -303,9 +324,9 @@ async def api_save_config(
 
 @app.post("/api/booking/test")
 async def api_booking_test():
+    """
+    Ejecuta run_booking usando la configuración guardada
+    y devuelve el dict que retorna booking.run_booking().
+    """
     result = run_booking()
     return result
-
-
-# IMPORTANTE: sin uvicorn.run aquí; Render lanzará el servidor con:
-# uvicorn app.main:app --host 0.0.0.0 --port $PORT  (en la config de Render)
