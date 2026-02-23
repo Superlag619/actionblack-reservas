@@ -329,4 +329,6 @@ async def api_booking_test():
     y devuelve el dict que retorna booking.run_booking().
     """
     result = run_booking()
+    print("RESULTADO BOOKING:", result)  # <- línea nueva para ver el dict en logs
+
     return result
