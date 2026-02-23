@@ -24,7 +24,7 @@ SEDE_CIUDAD = {
 
 def _build_time_label(hh_mm: str) -> str:
     """
-    Convierte '05:20' -> '5:20 AM', '19:30' -> '7:30 PM'. [file:83]
+    Convierte '05:20' -> '5:20 AM', '19:30' -> '7:30 PM'.
     """
     h, m = hh_mm.split(":")
     h = int(h)
@@ -36,7 +36,7 @@ def _build_time_label(hh_mm: str) -> str:
 
 def _compact_time_key(hh_mm: str) -> str:
     """
-    Convierte '05:20' -> '520AM', '19:30' -> '730PM'. [file:83]
+    Convierte '05:20' -> '520AM', '19:30' -> '730PM'.
     """
     h, m = hh_mm.split(":")
     h = int(h)
@@ -49,7 +49,7 @@ def _compact_time_key(hh_mm: str) -> str:
 def _row_compact_time_text(text: str) -> str:
     """
     De todo el texto de la fila, deja solo dígitos y las letras A/P/M
-    y las pega juntas. [file:83]
+    y las pega juntas.
     """
     t = text.upper()
     return "".join(ch for ch in t if ch.isdigit() or ch in "APM")
@@ -74,9 +74,9 @@ def run_booking():
     - Clic en ese botón y (si aplica) 'Confirmar'
     """
     config = get_config()
-    hora_objetivo = config["hora_clase"]       # p.ej. '05:20'
-    tipo_objetivo = config["tipo_clase"]       # p.ej. 'TONIC'
-    sede_objetivo = config["sede"]             # p.ej. 'Viva Envigado'
+    hora_objetivo = config["hora_clase"]        # p.ej. '05:20'
+    tipo_objetivo = config["tipo_clase"]        # p.ej. 'TONIC'
+    sede_objetivo = config["sede"]              # p.ej. 'Viva Envigado'
     dias_offset = int(config.get("dias_offset", 1))  # 0=hoy,1=mañana,...
 
     if dias_offset < 0:
@@ -92,28 +92,30 @@ def run_booking():
         f"- {sede_objetivo} - offset {dias_offset} día(s)"
     )
 
+    # Credenciales desde variables de entorno
     email = os.getenv("ACTIONBLACK_EMAIL")
     password = os.getenv("ACTIONBLACK_PASSWORD")
     if not email or not password:
         return {
             "status": "error",
-            "message": "Faltan ACTIONBLACK_EMAIL o ACTIONBLACK_PASSWORD en .env",
+            "message": "Faltan ACTIONBLACK_EMAIL o ACTIONBLACK_PASSWORD en variables de entorno",
         }
 
     ciudad = SEDE_CIUDAD.get(sede_objetivo, "ENVIGADO")
 
-       # ChromeOptions: headless solo en Render
+    # ChromeOptions: headless solo en Render
     options = webdriver.ChromeOptions()
-
-    # Si estamos en Render, forzar headless
     if os.getenv("RENDER") == "true":
+        # En Render (contenedor) ejecutamos en headless con flags para evitar crashes
         options.add_argument("--headless=new")
-
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1280,800")
-
+    options.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121 Safari/537.36"
+    )
 
     driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 25)
@@ -184,13 +186,66 @@ def run_booking():
         print(f"[{step}] OK -> {ciudad}")
         time.sleep(1.5)
 
+        # ==========================
+        # Seleccionar sede (bloque nuevo más robusto)
+        # ==========================
         step = "seleccionar sede"
-        sede_btn = wait.until(
+        print(f"[{step}] Buscando botón para sede '{sede_objetivo}'")
+
+        # Esperar a que aparezca el popup de sedes
+        wait.until(
             EC.presence_of_element_located(
-                (By.XPATH, f"//button[.//span[contains(.,'{sede_objetivo}')]]")
+                (
+                    By.XPATH,
+                    "//div[contains(@class,'MuiDialog-root') or contains(., 'Selecciona una ciudad')]",
+                )
             )
         )
-        driver.execute_script("arguments[0].click();", sede_btn)
+        time.sleep(1.5)
+
+        # Tomar todos los botones y loguear sus textos
+        sede_buttons = driver.find_elements(By.XPATH, "//button")
+        print(f"[{step}] Encontré {len(sede_buttons)} botones en el popup de sedes")
+
+        def normalizar(texto: str) -> str:
+            import unicodedata
+
+            t = texto.strip().lower().replace(" ", "")
+            t = "".join(
+                c for c in unicodedata.normalize("NFD", t)
+                if unicodedata.category(c) != "Mn"
+            )
+            return t
+
+        target = normalizar(sede_objetivo)
+        candidato = None
+
+        for idx, b in enumerate(sede_buttons, start=1):
+            try:
+                txt = b.text.strip()
+                if not txt:
+                    continue
+                n = normalizar(txt)
+                print(f"[{step}] boton {idx}: '{txt}' -> normalizado '{n}'")
+                if target in n:
+                    candidato = b
+                    print(f"[{step}] MATCH en boton {idx}: '{txt}'")
+                    break
+            except Exception as e:
+                print(f"[{step}] error leyendo boton {idx}: {type(e).__name__} -> {e}")
+                continue
+
+        if not candidato:
+            driver.quit()
+            return {
+                "status": "error",
+                "message": (
+                    f"[{step}] No encontré botón para sede '{sede_objetivo}'. "
+                    "Revisa logs para ver textos de sedes disponibles."
+                ),
+            }
+
+        driver.execute_script("arguments[0].click();", candidato)
         print(f"[{step}] OK -> {sede_objetivo}")
         time.sleep(3)
 
@@ -232,7 +287,10 @@ def run_booking():
                     driver.quit()
                     return {
                         "status": "error",
-                        "message": f"[{step}] No hay suficientes días hacia adelante para offset {dias_offset}.",
+                        "message": (
+                            f"[{step}] No hay suficientes días hacia adelante "
+                            f"para offset {dias_offset}."
+                        ),
                     }
 
             driver.execute_script("arguments[0].click();", dia_div)
@@ -243,7 +301,10 @@ def run_booking():
         # Buscar la fila correcta usando los botones "Reservar"
         # ==========================
         step = "buscar tarjeta hora"
-        print(f"[{step}] Recorriendo botones para encontrar hora '{hora_label}' (clave '{hora_compact}')")
+        print(
+            f"[{step}] Recorriendo botones para encontrar hora '{hora_label}' "
+            f"(clave '{hora_compact}')"
+        )
 
         # 1) Tomar todos los botones y filtrar los que digan RESERVAR
         all_buttons = driver.find_elements(By.TAG_NAME, "button")
@@ -290,7 +351,10 @@ def run_booking():
                     target_button = b
                     break
             except Exception as e:
-                print(f"[debug fila {idx}] error al procesar fila: {type(e).__name__} -> {e}")
+                print(
+                    f"[debug fila {idx}] error al procesar fila: "
+                    f"{type(e).__name__} -> {e}"
+                )
                 continue
 
         if target_row is None or target_button is None:
@@ -304,7 +368,10 @@ def run_booking():
             }
 
         step = "clic reservar"
-        print(f"[{step}] Encontrado botón RESERVAR en la fila de {hora_label}, haciendo clic…")
+        print(
+            f"[{step}] Encontrado botón RESERVAR en la fila de {hora_label}, "
+            "haciendo clic…"
+        )
         driver.execute_script("arguments[0].click();", target_button)
         time.sleep(3)
 
@@ -319,7 +386,10 @@ def run_booking():
             print(f"[{step}] OK")
             time.sleep(2)
         except Exception:
-            print(f"[{step}] No apareció botón Confirmar (posible reserva directa)")
+            print(
+                f"[{step}] No apareció botón Confirmar "
+                "(posible reserva directa)"
+            )
 
         driver.quit()
         return {
